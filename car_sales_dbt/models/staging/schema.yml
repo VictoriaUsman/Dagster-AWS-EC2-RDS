@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: car_sales_raw
+    schema: public
+    tables:
+      - name: car_sales
+        meta:
+          dagster:
+            asset_key: ["s3_to_rds"]
+
+models:
+  - name: stg_car_sales
+    description: "Staging layer — exact copy of raw car_sales table on RDS"
+    columns:
+      - name: id
+        description: "Auto-increment primary key"
+      - name: sale_date
+        description: "Date of the car sale"
+      - name: car_model
+        description: "Model of the car sold"
+      - name: region
+        description: "Sales region"
+      - name: sale_price
+        description: "Price of the sale"
+      - name: customer_name
+        description: "Name of the customer"

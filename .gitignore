@@ -1,0 +1,29 @@
+# Environment
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# dbt
+car_sales_dbt/target/
+car_sales_dbt/dbt_packages/
+car_sales_dbt/logs/
+
+# Dagster
+car_sales_dagster/*.egg-info/
+car_sales_dagster/storage/
+car_sales_dagster/history/
+car_sales_dagster/schedules/
+car_sales_dagster/logs/
+
+# AWS
+.aws/
+
+# Data
+*.csv
+
+# Scripts
+*.sh
+
+# OS
+.DS_Store

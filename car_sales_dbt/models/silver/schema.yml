@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: silver_car_sales
+    description: "Silver layer — enriched with total_sales per customer and customer_tag classification"
+    columns:
+      - name: id
+        description: "Primary key"
+      - name: sale_date
+        description: "Date of the car sale"
+      - name: car_model
+        description: "Model of the car sold"
+      - name: region
+        description: "Sales region"
+      - name: sale_price
+        description: "Cleaned sale price (numeric)"
+      - name: customer_name
+        description: "Cleaned customer name (title case, comma-fixed)"
+      - name: total_sales
+        description: "Sum of all sale_price for this customer"
+      - name: customer_tag
+        description: "Valued Customer (>=600k), Regular (<600k), or Not Frequent Buyer"

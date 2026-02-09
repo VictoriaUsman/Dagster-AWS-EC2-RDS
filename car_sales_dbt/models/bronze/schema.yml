@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: bronze_car_sales
+    description: "Bronze layer — cleaned sale_price (numeric) and customer_name (title case)"
+    columns:
+      - name: id
+        description: "Primary key"
+      - name: sale_date
+        description: "Date of the car sale"
+      - name: car_model
+        description: "Model of the car sold"
+      - name: region
+        description: "Sales region"
+      - name: sale_price
+        description: "Sale price cleaned to numeric (removed PHP, peso sign, commas)"
+      - name: customer_name
+        description: "Customer name cleaned to title case"

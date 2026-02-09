@@ -1,0 +1,7 @@
+dbt-postgres
+dagster
+dagster-dbt
+dagster-webserver
+boto3
+psycopg2-binary
+python-dotenv
