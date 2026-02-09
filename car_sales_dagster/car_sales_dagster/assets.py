@@ -4,10 +4,17 @@ import os
 
 import boto3
 import psycopg2
-from dagster import asset, OpExecutionContext
+from dagster import asset, OpExecutionContext, RetryPolicy, Backoff, Jitter
+
+_retry_policy = RetryPolicy(
+    max_retries=3,
+    delay=10,
+    backoff=Backoff.EXPONENTIAL,
+    jitter=Jitter.PLUS_MINUS,
+)
 
 
-@asset
+@asset(retry_policy=_retry_policy)
 def postgres_to_s3(context: OpExecutionContext) -> None:
     """Extract car_sales from source PostgreSQL and upload as CSV to S3."""
     conn = psycopg2.connect(
@@ -43,7 +50,7 @@ def postgres_to_s3(context: OpExecutionContext) -> None:
     )
 
 
-@asset(deps=[postgres_to_s3])
+@asset(deps=[postgres_to_s3], retry_policy=_retry_policy)
 def s3_to_rds(context: OpExecutionContext) -> None:
     """Download CSV from S3 and load into RDS PostgreSQL car_sales table."""
     s3 = boto3.client("s3", region_name=os.environ["S3_REGION"])
