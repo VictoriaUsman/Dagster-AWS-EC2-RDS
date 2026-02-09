@@ -1,0 +1,132 @@
+name: Deploy dbt + Dagster to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Validate dbt project
+    runs-on: ubuntu-latest
+    env:
+      RDS_PG_HOST: ${{ secrets.RDS_PG_HOST }}
+      RDS_PG_PORT: ${{ secrets.RDS_PG_PORT }}
+      RDS_PG_DATABASE: ${{ secrets.RDS_PG_DATABASE }}
+      RDS_PG_USER: ${{ secrets.RDS_PG_USER }}
+      RDS_PG_PASSWORD: ${{ secrets.RDS_PG_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt
+        run: pip install dbt-postgres
+
+      - name: Compile dbt project
+        working-directory: car_sales_dbt
+        run: dbt compile --profiles-dir .
+
+  deploy:
+    name: Deploy to EC2
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Copy project files to EC2
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          SCP="scp -i ~/.ssh/ec2_key.pem"
+          REMOTE=/home/ec2-user/car_sales
+
+          ${SSH} "rm -rf ${REMOTE}/car_sales_dbt ${REMOTE}/car_sales_dagster"
+          ${SSH} "mkdir -p ${REMOTE}"
+          ${SCP} -r car_sales_dbt    "ec2-user@${HOST}:${REMOTE}/"
+          ${SCP} -r car_sales_dagster "ec2-user@${HOST}:${REMOTE}/"
+          ${SCP}    requirements_ec2.txt "ec2-user@${HOST}:${REMOTE}/"
+
+      - name: Install packages on EC2
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          REMOTE=/home/ec2-user/car_sales
+          ${SSH} "cd ${REMOTE} && pip3 install -r requirements_ec2.txt && cd car_sales_dagster && pip3 install -e . && cd .."
+
+      - name: Write .env and configure AWS credentials
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          REMOTE=/home/ec2-user/car_sales
+          ${SSH} << ENVEOF
+          cat > ${REMOTE}/.env << 'DOTENV'
+          SOURCE_PG_HOST=${{ secrets.SOURCE_PG_HOST }}
+          SOURCE_PG_PORT=${{ secrets.SOURCE_PG_PORT }}
+          SOURCE_PG_DATABASE=${{ secrets.SOURCE_PG_DATABASE }}
+          SOURCE_PG_USER=${{ secrets.SOURCE_PG_USER }}
+          SOURCE_PG_PASSWORD=${{ secrets.SOURCE_PG_PASSWORD }}
+          S3_BUCKET=${{ secrets.S3_BUCKET }}
+          S3_REGION=${{ secrets.S3_REGION }}
+          S3_KEY=${{ secrets.S3_KEY }}
+          RDS_PG_HOST=${{ secrets.RDS_PG_HOST }}
+          RDS_PG_PORT=${{ secrets.RDS_PG_PORT }}
+          RDS_PG_DATABASE=${{ secrets.RDS_PG_DATABASE }}
+          RDS_PG_USER=${{ secrets.RDS_PG_USER }}
+          RDS_PG_PASSWORD=${{ secrets.RDS_PG_PASSWORD }}
+          DOTENV
+
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials << 'AWSCRED'
+          [default]
+          aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWSCRED
+          cat > ~/.aws/config << 'AWSCONF'
+          [default]
+          region = ${{ secrets.S3_REGION }}
+          output = json
+          AWSCONF
+          ENVEOF
+
+      - name: Run dbt models
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          REMOTE=/home/ec2-user/car_sales
+          ${SSH} "set -a && source ${REMOTE}/.env && set +a && cd ${REMOTE}/car_sales_dbt && dbt run --profiles-dir ."
+
+      - name: Parse dbt for Dagster manifest
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          REMOTE=/home/ec2-user/car_sales
+          ${SSH} "set -a && source ${REMOTE}/.env && set +a && cd ${REMOTE}/car_sales_dbt && dbt parse --profiles-dir ."
+
+      - name: Restart Dagster webserver
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key.pem ec2-user@${HOST}"
+          REMOTE=/home/ec2-user/car_sales
+          ${SSH} << 'DAGEOF'
+          pkill -f "dagster dev" || true
+          sleep 2
+          set -a && source /home/ec2-user/car_sales/.env && set +a
+          cd /home/ec2-user/car_sales/car_sales_dagster
+          nohup dagster dev -h 0.0.0.0 -p 3000 -w workspace.yaml > /tmp/dagster.log 2>&1 &
+          echo "Dagster restarted (PID: $!)"
+          DAGEOF
