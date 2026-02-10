@@ -25,5 +25,11 @@ car_sales_dagster/logs/
 # Scripts
 *.sh
 
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+
 # OS
 .DS_Store
